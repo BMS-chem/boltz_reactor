@@ -4,7 +4,7 @@ collect_results.py
 Collects the Boltz result files for one experiment into a single table.
 
 Reads:  experiments/<experiment>/outputs/boltz_results_jobs/predictions/<id>/
-            affinity_<id>.json              (only if affinity was on)
+            affinity_<id>.json              (if affinity was on)
             confidence_<id>_model_0.json
 Writes: experiments/<experiment>/results.csv
 

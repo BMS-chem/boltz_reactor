@@ -8,10 +8,7 @@ Reads:  experiments/<experiment>/inputs/proteins.csv   (ID, SEQUENCE, COFACTORS[
         experiments/<experiment>/inputs/covalent_prepared.csv   (if this is a covalent experiment)
 Writes: experiments/<experiment>/jobs/<proteinID>__<ligandID>.yaml
 
-If covalent_prepared.csv is present, prepare_covalents.py has already worked out
-each ligand's bound form and attachment atom, and every job gets a bond constraint
-joining that atom to the protein's COVALENT_SITE. An experiment is either covalent
-or it is not; prepare_covalents.py refuses to mix them.
+If covalent_prepared.csv is present, every job gets a bond constraint joining that atom to the protein's COVALENT_SITE. 
 
 Example:
     python Scripts/make_jobs.py --experiment <experiment>
@@ -130,10 +127,7 @@ for _, row in ligands.iterrows():
     elif Chem.MolFromSmiles(row["SMILES"]) is None:
         problems.append(f"ligands.csv: '{row['ID']}' has a SMILES that RDKit cannot read: {row['SMILES']}")
 
-# 4e. For a covalent experiment, every ligand must have been prepared and every
-# protein must say where the ligand attaches. prepare_covalents.py has already
-# checked the sites in detail; this is here so make_jobs.py cannot be run on its
-# own with a stale or incomplete covalent_prepared.csv.
+# 4e. Prevent make_jobs.py from being run on a stale or incomplete covalent_prepared.csv.
 if covalent:
     for ligand_id in ligands["ID"]:
         if ligand_id not in prepared_by_id:

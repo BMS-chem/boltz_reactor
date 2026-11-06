@@ -1,23 +1,21 @@
 """
 prepare_covalents.py
 
-Turns each covalent ligand into the "bound" form Boltz needs, and works out
-which of its atoms the protein attaches to.
+Turns each covalent ligand into the "bound" form and works out the atom
+attachment for Boltz.
 
 A covalent ligand is given as its normal, unreacted SMILES plus a WARHEAD name.
 This script applies that warhead's reaction, which opens one valence on the
 attachment atom, and names that atom the way Boltz will name it.
 
-An experiment is either covalent or it is not; the two are never mixed. If no
-ligand has a WARHEAD this script does nothing and the pipeline carries on as
-before, so run_pipeline.sh can call it every time.
+NB: can't mix covalent and non-covalent ligands in the same experiment
 
 Reads:  experiments/<experiment>/inputs/ligands.csv    (ID, SMILES, WARHEAD)
         experiments/<experiment>/inputs/proteins.csv   (ID, SEQUENCE, COFACTORS, COVALENT_SITE)
 Writes: experiments/<experiment>/inputs/covalent_prepared.csv
 
 Example:
-    python Scripts/prepare_covalents.py --experiment 002_covalent_test
+    python Scripts/prepare_covalents.py --experiment covalent_test
 """
 
 import argparse
@@ -36,11 +34,7 @@ RDLogger.DisableLog("rdApp.*")
 # ---------------------------------------------------------------------------
 # 1. The warhead library
 # ---------------------------------------------------------------------------
-# Add a warhead by adding an entry here. Each one needs:
-#   smarts   a reaction SMARTS, "reactant >> product". The atom that ends up
-#            bonded to the protein must be mapped as :1 on BOTH sides.
-#   residue  the one-letter amino acid it reacts with
-#   atom     the atom of that residue that makes the bond (PDB atom name)
+# Warheads are hardcoded here.
 #
 # The product keeps a filled valence in the SMARTS; the code below opens it by
 # putting one radical electron on the mapped atom. That open-valence form is
@@ -58,6 +52,12 @@ WARHEADS = {
         "residue": "C",
         "atom": "SG",
     },
+    "CF2_acrylamide": {
+        # Michael addition
+        "smarts": "[F][CH:1]([F])[CH:2]=[CH:3][CX3:4](=[O:5])[NX3:6]>>[F][CH:1]([F])[CH:2][CH2:3][CX3:4](=[O:5])[NX3:6]",
+        "residue": "C",
+        "atom": "SG",
+    }
 }
 
 
@@ -97,19 +97,16 @@ ligands = ligands.apply(lambda column: column.str.strip())
 
 
 # ---------------------------------------------------------------------------
-# 5. Is this a covalent experiment?
+# 5. Check whether experiment is covalent
 # ---------------------------------------------------------------------------
-# An experiment is covalent if any ligand names a warhead. Mixing is not allowed,
-# so "some but not all" is a mistake rather than a choice.
+# (if any values are present in WARHEAD column)
 if "WARHEAD" not in ligands.columns:
     warheads_named = []
 else:
     warheads_named = [w for w in ligands["WARHEAD"] if w != ""]
 
 if not warheads_named:
-    print("No WARHEAD values: this is not a covalent experiment, nothing to prepare.")
-    # An old file from a previous covalent run would otherwise be picked up by
-    # make_jobs.py and quietly turn this experiment covalent.
+    print("Non-covalent experiment.")
     if prepared_file.exists():
         prepared_file.unlink()
         print(f"Removed a leftover {prepared_file.name} from an earlier run.")
@@ -130,7 +127,7 @@ print(f"Covalent experiment: {len(ligands)} ligands, {len(proteins)} proteins")
 # Every problem found is collected, so they can all be fixed in one go.
 problems = []
 
-# 6a. Every warhead is one we know about
+# 6a. Check that warhead is encoded
 for _, ligand in ligands.iterrows():
     if ligand["WARHEAD"] not in WARHEADS:
         problems.append(f"ligands.csv: '{ligand['ID']}' has an unknown WARHEAD "
@@ -139,10 +136,8 @@ for _, ligand in ligands.iterrows():
 if problems:
     sys.exit("ERROR:\n  " + "\n  ".join(problems))
 
-# Which residues the warheads in this experiment need (e.g. {"C"} for cysteine).
-required_residues = sorted({WARHEADS[w]["residue"] for w in ligands["WARHEAD"]})
 
-# 6b. Every protein has a usable COVALENT_SITE
+# 6b. Check that protein site is correctly specified
 if "COVALENT_SITE" not in proteins.columns:
     sys.exit("ERROR: this is a covalent experiment, but proteins.csv has no "
              "'COVALENT_SITE' column.\n"
@@ -158,7 +153,7 @@ for _, protein in proteins.iterrows():
         problems.append(f"proteins.csv: '{protein_id}' has an empty COVALENT_SITE")
         continue
 
-    # Expected form: A:C16  ->  chain A, residue C, position 16
+    # Check that the covalent site is in the expected format
     if ":" not in site:
         problems.append(f"proteins.csv: '{protein_id}' COVALENT_SITE '{site}' has no ':'. "
                         "Expected <chain>:<residue><position>, e.g. A:C16")
@@ -176,8 +171,7 @@ for _, protein in proteins.iterrows():
     residue_letter = residue_part[0]
     position = int(residue_part[1:])
 
-    # The chain letter must be one of this protein's chains. make_jobs.py gives the
-    # protein chains letters in order, so A is the first chain in SEQUENCE.
+    # Check the covalent attachment site is present and correct in the protein
     chains = protein["SEQUENCE"].split(":")
     if chain_letter not in chain_letters[:len(chains)]:
         problems.append(f"proteins.csv: '{protein_id}' COVALENT_SITE '{site}' names chain "
@@ -192,19 +186,12 @@ for _, protein in proteins.iterrows():
                         f"is outside chain {chain_letter}, which is {len(chain_sequence)} residues long")
         continue
 
-    # The residue really there must be the one written down. This catches an
-    # off-by-one, and a sequence that is not the construct you thought it was.
+    # The provided residue has to match the residue in the sequence
     actual = chain_sequence[position - 1]
     if actual != residue_letter:
         problems.append(f"proteins.csv: '{protein_id}' COVALENT_SITE '{site}' says residue "
                         f"{position} is '{residue_letter}', but the sequence has '{actual}' there")
         continue
-
-    # And it must be a residue the warheads in this experiment can react with.
-    if residue_letter not in required_residues:
-        problems.append(f"proteins.csv: '{protein_id}' COVALENT_SITE '{site}' is a "
-                        f"'{residue_letter}', but the warheads used here react with "
-                        f"{required_residues}")
 
 if problems:
     sys.exit("ERROR: please fix these problems in the input files:\n  " + "\n  ".join(problems))
@@ -213,11 +200,9 @@ if problems:
 # ---------------------------------------------------------------------------
 # 7. React each ligand and name its attachment atom
 # ---------------------------------------------------------------------------
+# Function to generate Boltz atom names for a ligand molecule
 def boltz_atom_names(mol):
-    """The names Boltz gives a SMILES ligand's atoms: element symbol, then the
-    RDKit canonical rank + 1, ranked with hydrogens added. Boltz then drops the
-    hydrogens, so the heavy-atom numbers start part-way up. Checked against a
-    real run - see PLAN.md."""
+    """This function is to figure out what Boltz will name each heavy atom in the ligand"""
     mol_h = Chem.AddHs(mol)
     ranks = list(Chem.CanonicalRankAtoms(mol_h))
     names = {}
@@ -247,8 +232,7 @@ for _, ligand in ligands.iterrows():
                         f"(SMILES {ligand['SMILES']})")
         continue
 
-    # More than one match is an error, even if the products come out identical:
-    # which end reacts is not something to guess at.
+    # More than one match is an error:
     if len(products) > 1:
         problems.append(f"ligands.csv: '{ligand_id}' has {len(products)} {warhead_name} groups. "
                         "Pick one and write the ligand with a single warhead.")
@@ -256,15 +240,13 @@ for _, ligand in ligands.iterrows():
 
     product = products[0][0]
 
-    # Open the valence on the attachment atom: one radical electron, and no
-    # implicit hydrogen added back to fill it. RDKit does not keep the map number
-    # on product atoms, it records it as the 'old_mapno' property.
+    # Open the valence on the attachment atom
     attachment_idx = None
-    for atom in product.GetAtoms():
-        if atom.GetPropsAsDict().get("old_mapno", atom.GetAtomMapNum()) == 1:
-            atom.SetNoImplicit(True)
-            atom.SetNumRadicalElectrons(1)
-            attachment_idx = atom.GetIdx()
+    for atom in product.GetAtoms(): # Iterate over all atoms to find the attachment atom
+        if atom.GetPropsAsDict().get("old_mapno", atom.GetAtomMapNum()) == 1: # Attachment atom is mapped as :1
+            atom.SetNoImplicit(True) # Stops RDKit from adding a hydrogen back again
+            atom.SetNumRadicalElectrons(1) # Boltz expects open bond site to be a radical
+            attachment_idx = atom.GetIdx() # Record the index of the attachment atom
         atom.SetAtomMapNum(0)
 
     if attachment_idx is None:
@@ -272,6 +254,7 @@ for _, ligand in ligands.iterrows():
                         "attachment atom as :1. Fix the entry in WARHEADS.")
         continue
 
+    # Sanitise to check valid molecule
     try:
         Chem.SanitizeMol(product)
     except Exception as error:
@@ -281,9 +264,7 @@ for _, ligand in ligands.iterrows():
 
     bound_smiles = Chem.MolToSmiles(product)
 
-    # Name the atom from the SMILES as it will be WRITTEN, by reading it back the
-    # way Boltz will. Naming the in-memory product instead risks a different atom
-    # order from the one Boltz ends up with.
+    # Name the atom from the SMILES as it will be WRITTEN by reading as Boltz would.
     reread = Chem.MolFromSmiles(bound_smiles)
     if reread is None:
         problems.append(f"ligands.csv: '{ligand_id}' produced a bound SMILES that cannot be "
@@ -296,13 +277,13 @@ for _, ligand in ligands.iterrows():
                         f"valences, expected exactly 1: {bound_smiles}")
         continue
 
-    # Boltz builds a 3D conformer with ETKDG. If that fails here it fails there too,
-    # so it is worth finding out now rather than on the GPU.
+    # Check: Boltz will attempt to build a 3D conformer with ETKDG.
     embed_test = Chem.AddHs(Chem.MolFromSmiles(bound_smiles))
     if AllChem.EmbedMolecule(embed_test, randomSeed=0xC0FFEE) != 0:
         problems.append(f"ligands.csv: '{ligand_id}' bound form will not embed in 3D: {bound_smiles}")
         continue
 
+    # Get the name of the attachment atom as Boltz would see it using the function defined earlier
     attachment_name = boltz_atom_names(reread)[open_valences[0]]
 
     rows.append({

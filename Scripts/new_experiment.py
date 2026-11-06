@@ -7,8 +7,6 @@ Makes:  experiments/<experiment>/inputs/proteins.csv   (header row only)
         experiments/<experiment>/inputs/ligands.csv    (header row only)
         experiments/<experiment>/jobs/  outputs/  logs/
 
-Existing files are never overwritten, so running this twice is harmless.
-
 Example:
     python Scripts/new_experiment.py --experiment my_screen
 """
