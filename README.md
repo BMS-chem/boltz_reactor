@@ -1,10 +1,12 @@
 # Boltz batch pipeline
 
-Takes a list of proteins and a list of ligands, makes one [Boltz-2](https://github.com/jwohlwend/boltz)
-job for every protein x ligand pair, runs them on a Slurm cluster, and collects
-the results into one table. 
-Covalent ligands are written as regular SMILES then reacted via SMARTS strings.
-Enrichment of actives/inactives during benchmarking/validation can also be calculated.
+_Takes a list of proteins and a list of ligands, makes one [Boltz-2](https://github.com/jwohlwend/boltz)
+job for every protein x ligand pair, runs them on a Slurm cluster, and collects the results into one table. The pipeline was run on a literature dataset in order to calculate enrichment and verify that it can reproduce the published results._
+
+
+This project represents a useful tool for my work which couples automatic processing of covalent ligands from unreacted SMILES strings (which is the most user-friendly input format) with Boltz job preparation and submission. Covalent ligands are reacted via pre-defined SMARTS strings into the format that Boltz will accept.
+
+
 
 
 ## Requirements
