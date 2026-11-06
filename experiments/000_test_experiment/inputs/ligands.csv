@@ -1,0 +1,3 @@
+ID,SMILES
+test_ligand,CC(=C)c1cccc(c1)[C@H](CN(C)S(=O)(=O)c2cc(cc(c2)F)F)N
+aspirin,CC(=O)Oc1ccccc1C(=O)O

@@ -1,0 +1,10 @@
+Enrichment for experiment: 001_eLife_Sigma2_test
+Results file: experiments\001_eLife_Sigma2_test\results.csv
+Label file:   experiments\001_eLife_Sigma2_test\reference\actives_inactives.txt
+Score ranked: AFFINITY_PRED_VALUE, negated (lower is a tighter binder)
+
+Labelled compounds:            506
+Labelled without a prediction: 0
+Predicted without a label:     0
+
+hTMEM97: AUC 0.848  (n = 506: 201 active, 305 inactive)
